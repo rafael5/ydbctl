@@ -175,7 +175,7 @@ class TestUsage:
         )
         assert proc.returncode == 2
 
-    def test_help_lists_phase_1_subcommands(self):
+    def test_help_lists_phase_1_and_2_subcommands(self):
         proc = subprocess.run(
             [sys.executable, "-m", "ydbctl", "--help"],
             capture_output=True, text=True,
@@ -183,6 +183,10 @@ class TestUsage:
             timeout=10,
         )
         assert proc.returncode == 0
+        # Phase 1
         for known in ("status", "version", "ports", "env", "regions",
                       "files", "dbinfo", "ipc", "logs", "health", "which"):
+            assert known in proc.stdout
+        # Phase 2
+        for known in ("exec", "sql", "shell", "globals"):
             assert known in proc.stdout

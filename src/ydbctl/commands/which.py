@@ -60,6 +60,29 @@ OPERATIONS: dict[str, dict[str, Any]] = {
         "mechanism": "lookup in OPERATIONS registry",
         "underlying": "ydbctl/commands/which.py",
     },
+    # ---- Phase 2 ----
+    "exec": {
+        "mechanism": "yottadb -run %XCMD '<m-code>' (default) or "
+                      "yottadb -direct heredoc with HALT injection (--direct)",
+        "underlying": "docker exec [-i] {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; yottadb -run %XCMD <code>'",
+    },
+    "sql": {
+        "mechanism": "octo CLI piped on stdin (requires Octo install)",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; "
+                      "echo <sql> | {ydb_dist}/plugin/bin/octo'",
+    },
+    "shell": {
+        "mechanism": "execvp into docker exec -it yottadb -direct",
+        "underlying": "docker exec -it {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; yottadb -direct'",
+    },
+    "globals": {
+        "mechanism": "show: yottadb -run %XCMD 'IF $D(^X) ZWRITE ^X'  |  "
+                      "export: mupip extract -format=ZWR -select=^X + docker cp",
+        "underlying": "(see exec for show; mupip + docker cp for export)",
+    },
 }
 
 

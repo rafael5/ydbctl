@@ -5,9 +5,9 @@ Hides the patchwork of `docker exec`, `mupip` / `lke` / `gde` invocations,
 IPC bookkeeping, and direct-mode heredocs behind a deterministic,
 JSON-first surface.
 
-This repo implements **Phase 1** of the design — the read-only floor:
-no IPC mutation, no auth required, every command tested against a
-live `ydb-test` container.
+This repo implements **Phases 1 and 2** of the design — read-only
+floor + M execution / SQL / shell / globals. Every command is tested
+against a live `ydb-test` container.
 
 Sibling project: [`irisctl`](https://github.com/rafael5/irisctl) for
 the IRIS Community Edition Docker container — same envelope shape,
@@ -103,6 +103,55 @@ file                      /data/r2.07_x86_64/g/yottadb.dat
 | `ydbctl health` | Green/yellow verdict with check breakdown | composite |
 | `ydbctl which [OP]` | Explain underlying mechanism | static registry |
 
+### Phase 2 subcommands (M execution / SQL / shell / globals)
+
+| Command | Purpose | Mechanism |
+|---|---|---|
+| `ydbctl exec '<m-code>'` | Run M via `yottadb -run %XCMD` | one-shot, clean output |
+| `ydbctl exec --stdin` | Read M from stdin | flattened to single line |
+| `ydbctl exec --file PATH` | Read M from a host file | flattened |
+| `ydbctl exec --run "ENTRY^ROUTINE" [--arg X]` | Invoke a labelled entry | `yottadb -run` |
+| `ydbctl exec '<m>' --direct` | Multi-line via heredoc | `yottadb -direct` + HALT injection |
+| `ydbctl sql '<sql>' [--file PATH]` | SQL via Octo (when installed) | reports `not_found` if Octo missing |
+| `ydbctl shell [--dry-run]` | Interactive M shell | `os.execvp` into `docker exec -it` |
+| `ydbctl globals show NAME` | Dump `^NAME` subtree | guarded `IF $D(^X) ZWRITE ^X` |
+| `ydbctl globals export NAME [--to PATH] [--format ZWR]` | Extract to host file | `mupip extract` + `docker cp` |
+
+Phase 2 design notes vs irisctl:
+
+- **No license bookkeeping.** YottaDB is Apache 2.0 with no LU concept,
+  so no precheck, no `--force` flag for license bypass, no retry on
+  `<LICENSE LIMIT EXCEEDED>`. Each call just runs.
+- **Dual execution paths.** `%XCMD` is the default (clean stdout, no
+  `YDB>` prompts). `--direct` switches to the heredoc path for
+  multi-line scripts that can't fit on one logical M line.
+- **`ZWRITE` not `ZW`.** The `ZW` abbreviation produced no output in
+  r2.07 — the wrapper uses the full keyword.
+- **`mupip extract` won't overwrite.** The wrapper `rm -f`s the
+  in-container target before extracting.
+
+Examples:
+
+```bash
+$ ydbctl exec 'W $ZV,!' --human
+mode    xcmd
+output  GT.M V7.1-002 Linux x86_64
+
+$ ydbctl exec --direct '\nS A=2\nS B=3\nW A+B,!'
+{"v":1,"ok":true,"command":"exec","data":{"mode":"direct","output":"\n5\n"},"warnings":[]}
+
+$ ydbctl globals show ^DOESNOTEXIST --human
+name   ^DOESNOTEXIST
+lines  []
+count  0
+note   global has no defined nodes
+
+$ ydbctl shell --dry-run --human
+argv     ['docker', 'exec', '-it', 'ydb-test', 'bash', '-c',
+          '. /opt/yottadb/current/ydb_env_set >/dev/null 2>&1 && exec yottadb -direct']
+dry_run  yes
+```
+
 Every command is tested end-to-end against the live `ydb-test`
 container — per the project plan, "real container only — no mocking."
 
@@ -176,19 +225,18 @@ The `live_ydb` pytest fixture is the readiness probe — tests marked
 
 ### Test totals
 
-After Phase 1: **58 passed** (~4.2s).
+After Phase 2: **90 passed** (~7.5s).
 
-- ~10 unit tests on parsers + output envelope
-- ~38 integration tests against the live container
-- Default coverage: ~29% (gate at 25%; subprocess tracing is the
-  bottleneck — Phase 2 direct-import tests would push past 70%).
+- 21 unit tests on parsers + output + config envelope
+- 69 integration tests against the live container
+- Default coverage: ~40% (gate at 25%).
 
 ## Roadmap
 
 | Phase | Subcommands | Status |
 |---|---|---|
 | 1 | status, version, ports, env, regions, files, dbinfo, ipc, logs, health, which | **shipped** |
-| 2 | exec, sql (via Octo/ROcto), shell, globals show/export | not started |
+| 2 | exec, sql (via Octo when installed), shell, globals show/export | **shipped** |
 | 3 | maintenance: backup, restore, integ, reorg, freeze, locks, rundown, recover | not started |
 | 4 | services: gui, rocto, web, gtcm + VistA layer if `profile.vista=true` | not started |
 | 5 | replication, polish | not started (pipx packaging skipped) |

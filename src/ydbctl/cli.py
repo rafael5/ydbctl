@@ -80,14 +80,20 @@ def _build_parser() -> argparse.ArgumentParser:
         return sub.add_parser(name, parents=[globals_parent], **kw)
 
     # Lazy imports
+    from pathlib import Path
+
     from ydbctl.commands import dbinfo as cmd_dbinfo
     from ydbctl.commands import env as cmd_env
+    from ydbctl.commands import exec_cmd as cmd_exec
     from ydbctl.commands import files as cmd_files
+    from ydbctl.commands import globals_cmd as cmd_globals
     from ydbctl.commands import health as cmd_health
     from ydbctl.commands import ipc as cmd_ipc
     from ydbctl.commands import logs as cmd_logs
     from ydbctl.commands import ports as cmd_ports
     from ydbctl.commands import regions as cmd_regions
+    from ydbctl.commands import shell as cmd_shell
+    from ydbctl.commands import sql as cmd_sql
     from ydbctl.commands import status as cmd_status
     from ydbctl.commands import version as cmd_version
     from ydbctl.commands import which as cmd_which
@@ -130,6 +136,68 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = _sub("health", help="Green/yellow verdict with check breakdown")
     p.set_defaults(func=lambda a, prof: cmd_health.run(prof))
+
+    # ---- Phase 2: execution ----
+    p = _sub("exec", help="Run M code via yottadb -run %%XCMD (or --direct)")
+    p.add_argument("code", nargs="?", default=None,
+                   help="Inline M code (omit when using --file/--stdin/--run)")
+    p.add_argument("--file", type=Path, default=None,
+                   help="Read M code from a file")
+    p.add_argument("--stdin", action="store_true",
+                   help="Read M code from stdin")
+    p.add_argument("--run", dest="run_entry", default=None,
+                   help="Invoke a labelled entry: ENTRY^ROUTINE")
+    p.add_argument("--arg", dest="run_args", action="append", default=None,
+                   help="Argument to pass to --run (repeatable)")
+    p.add_argument("--direct", action="store_true",
+                   help="Use yottadb -direct heredoc (multi-line scripts)")
+    p.add_argument("--timeout", type=float, default=60.0)
+    p.set_defaults(func=lambda a, prof: cmd_exec.run(
+        prof,
+        code=a.code,
+        stdin_text=sys.stdin.read() if a.stdin else None,
+        file=a.file,
+        run_entry=a.run_entry,
+        run_args=a.run_args,
+        direct=a.direct,
+        timeout=a.timeout,
+    ))
+
+    p = _sub("sql", help="Run SQL via Octo (when installed)")
+    p.add_argument("statement", nargs="?", default=None,
+                   help="Inline SQL (omit when using --file)")
+    p.add_argument("--file", type=Path, default=None,
+                   help="Read SQL from a file")
+    p.add_argument("--timeout", type=float, default=60.0)
+    p.set_defaults(func=lambda a, prof: cmd_sql.run(
+        prof, statement=a.statement, file=a.file, timeout=a.timeout))
+
+    p = _sub("shell", help="Open an interactive yottadb -direct session")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print the docker-exec argv instead of execing")
+    p.set_defaults(func=lambda a, prof: cmd_shell.run(prof, dry_run=a.dry_run))
+
+    p_glob = _sub("globals", help="ZWRITE / mupip extract globals")
+    glob_sub = p_glob.add_subparsers(dest="globals_sub", required=False,
+                                      metavar="ACTION")
+
+    p_show = glob_sub.add_parser("show", parents=[globals_parent],
+                                  help="Dump a global subtree (ZWRITE)")
+    p_show.add_argument("name", help="Global name (with or without leading ^)")
+    p_show.set_defaults(globals_sub="show")
+
+    p_export = glob_sub.add_parser(
+        "export", parents=[globals_parent],
+        help="Extract a global to a host file (mupip extract)",
+    )
+    p_export.add_argument("name", help="Global name (with or without leading ^)")
+    p_export.add_argument("--to", type=Path, default=None,
+                          help="Host output path (default: cwd/<name>.zwr)")
+    p_export.add_argument("--format", default="ZWR",
+                          help="Output format: ZWR (default), GO, BINARY")
+    p_export.set_defaults(globals_sub="export")
+
+    p_glob.set_defaults(func=lambda a, prof: cmd_globals.dispatch(a, prof))
 
     p = _sub("which", help="Explain the underlying mechanism for an op")
     p.add_argument("op", nargs="?", default=None,

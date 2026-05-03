@@ -164,3 +164,13 @@ def tcp_open(host: str, port: int, timeout: float = 1.0) -> bool:
             return True
     except OSError:
         return False
+
+
+def cp_to_container(src_path: str, container: str, dest_path: str) -> None:
+    """`docker cp <src> <container>:<dest>`."""
+    _run(["docker", "cp", src_path, f"{container}:{dest_path}"], timeout=120)
+
+
+def cp_from_container(container: str, src_path: str, dest_path: str) -> None:
+    """`docker cp <container>:<src> <dest>`."""
+    _run(["docker", "cp", f"{container}:{src_path}", dest_path], timeout=120)
