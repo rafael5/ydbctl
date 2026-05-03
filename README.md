@@ -5,9 +5,10 @@ Hides the patchwork of `docker exec`, `mupip` / `lke` / `gde` invocations,
 IPC bookkeeping, and direct-mode heredocs behind a deterministic,
 JSON-first surface.
 
-This repo implements **Phases 1 and 2** of the design — read-only
-floor + M execution / SQL / shell / globals. Every command is tested
-against a live `ydb-test` container.
+This repo implements **Phases 1, 2, and 3** of the design — read-only
+floor + M execution / SQL / shell / globals + maintenance ops
+(integ / reorg / freeze / locks / rundown / recover / backup / restore).
+Every command is tested against a live `ydb-test` container.
 
 Sibling project: [`irisctl`](https://github.com/rafael5/irisctl) for
 the IRIS Community Edition Docker container — same envelope shape,
@@ -152,6 +153,70 @@ argv     ['docker', 'exec', '-it', 'ydb-test', 'bash', '-c',
 dry_run  yes
 ```
 
+### Phase 3 subcommands (maintenance — the operationally interesting ones)
+
+| Command | Purpose | Mechanism |
+|---|---|---|
+| `ydbctl integ [--region R] [--full]` | Integrity check + per-region pass/fail summary | `mupip integ -fast/-full` |
+| `ydbctl reorg [--region R] [--truncate]` | Defrag/coalesce blocks | `mupip reorg` |
+| `ydbctl freeze --on/--off [--region R]` | Suspend/resume DB updates | `mupip freeze -on/-off <region>` |
+| `ydbctl locks show [--region R]` | View active M LOCKs | `lke show -all` |
+| `ydbctl locks clear --yes [--region R]` | Clear M LOCKs (mutating, --yes-gated) | `lke clear -all -nointeractive` |
+| `ydbctl rundown [--region R]` | Release orphan IPC after unclean shutdown | `mupip rundown -region <r>` |
+| `ydbctl recover [--region R] [--journal-file F] [--forward]` | Replay journal records | `mupip journal -recover -backward` |
+| `ydbctl backup [REGION] [--to PATH] [--offline]` | Bytestream backup → host file | `mupip backup -bytestream` + `docker cp` |
+| `ydbctl restore --from F --target DAT --yes` | Overwrite DAT from backup (destructive) | `docker cp` + `mupip restore` |
+
+Phase 3 specifics worth knowing:
+
+- **`mupip` writes to stderr.** The wrapper merges `2>&1` inside the
+  container so callers see the informational messages (`BACKUPDBFILE`,
+  `MUFILRNDWNSUC`, etc.) that mupip emits there.
+- **`mupip restore` enforces TN-alignment.** A backup-then-restore
+  in the same session generally fails with `MUPRESTERR` because the
+  backup itself advances the DB's transaction number. The wrapper
+  surfaces the error cleanly; this is mupip's contract, not a bug.
+- **`mupip backup` refuses to overwrite.** The wrapper `rm -f`s the
+  in-container target before invoking — same trick as
+  `globals export`.
+- **`freeze` uses positional region** (no `-region` flag), unlike
+  most other mupip subcommands. The wrapper hides this asymmetry.
+- **`mupip rundown` returns non-zero on missing `.repl`** in
+  non-replicated installs — the wrapper detects the FILENOTFND
+  noise, surfaces it as a warning, and still reports success when
+  per-region rundowns succeeded.
+
+Examples:
+
+```bash
+$ ydbctl integ --human | head -8
+mode             fast
+region_arg       *
+regions_checked  4
+all_ok           yes
+regions          [{'region': 'DEFAULT', 'ok': True}, ...]
+
+$ ydbctl backup --to ~/data/backups/ydb --human
+region          DEFAULT
+host_path       /home/rafael/data/backups/ydb/default.bk
+size_bytes      4331520
+online          yes
+container_path  /tmp/ydbctl-backup-default.bk
+db_files        [{'db_file': '/data/r2.07_x86_64/g/yottadb.dat',
+                  'backup_file': '/tmp/ydbctl-backup-default.bk'}]
+
+$ ydbctl freeze --on --region DEFAULT --human
+action            on
+region_arg        DEFAULT
+regions_affected  1
+regions           [{'region': 'DEFAULT', 'state': 'FROZEN'}]
+
+$ ydbctl restore --from /backup.bk --target /data/x.dat --dry-run
+{"v":1,"ok":true,"command":"restore","data":{...,"dry_run":true,
+ "steps":["docker cp /backup.bk ydb-test:/tmp/ydbctl-restore-source.bk",
+          "mupip restore /data/x.dat /tmp/ydbctl-restore-source.bk"]}}
+```
+
 Every command is tested end-to-end against the live `ydb-test`
 container — per the project plan, "real container only — no mocking."
 
@@ -225,11 +290,13 @@ The `live_ydb` pytest fixture is the readiness probe — tests marked
 
 ### Test totals
 
-After Phase 2: **90 passed** (~7.5s).
+After Phase 3: **107 passed + 1 deselected** (~9.3s).
 
 - 21 unit tests on parsers + output + config envelope
-- 69 integration tests against the live container
-- Default coverage: ~40% (gate at 25%).
+- 86 integration tests against the live container
+- 1 `@slow` test (real backup → restore round-trip) opt-in via
+  `make test-slow`
+- Default coverage: ~44% (gate at 25%).
 
 ## Roadmap
 
