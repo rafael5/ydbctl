@@ -370,9 +370,9 @@ After Phase 5: **135 passed + 1 deselected** (~9.5s).
 |---|---|---|
 | 1 | status, version, ports, env, regions, files, dbinfo, ipc, logs, health, which | **shipped** |
 | 2 | exec, sql (via Octo when installed), shell, globals show/export | **shipped** |
-| 3 | maintenance: backup, restore, integ, reorg, freeze, locks, rundown, recover | not started |
-| 4 | services: gui, rocto, web, gtcm + VistA layer if `profile.vista=true` | not started |
-| 5 | replication, polish | not started (pipx packaging skipped) |
+| 3 | integ, reorg, freeze, locks, rundown, recover, backup, restore | **shipped** |
+| 4 | vista rpcbroker/vistalink/hl7/journal/ports (VistA layer only — services skipped) | **shipped** |
+| 5 | repl source/receiver/instance/rollback + JSON-RPC mode (`ydbctl rpc`) | **shipped** (pipx skipped) |
 
 See [docs/ydb-cli-plan.md](docs/ydb-cli-plan.md) for the full
 proposal, including LOC estimates and the cross-tool design contract
