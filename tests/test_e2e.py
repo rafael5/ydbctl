@@ -190,3 +190,7 @@ class TestUsage:
         # Phase 2
         for known in ("exec", "sql", "shell", "globals"):
             assert known in proc.stdout
+        # Phase 3
+        for known in ("integ", "reorg", "freeze", "locks",
+                      "rundown", "recover", "backup", "restore"):
+            assert known in proc.stdout

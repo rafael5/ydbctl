@@ -82,16 +82,24 @@ def _build_parser() -> argparse.ArgumentParser:
     # Lazy imports
     from pathlib import Path
 
+    from ydbctl.commands import backup as cmd_backup
     from ydbctl.commands import dbinfo as cmd_dbinfo
     from ydbctl.commands import env as cmd_env
     from ydbctl.commands import exec_cmd as cmd_exec
     from ydbctl.commands import files as cmd_files
+    from ydbctl.commands import freeze as cmd_freeze
     from ydbctl.commands import globals_cmd as cmd_globals
     from ydbctl.commands import health as cmd_health
+    from ydbctl.commands import integ as cmd_integ
     from ydbctl.commands import ipc as cmd_ipc
+    from ydbctl.commands import locks as cmd_locks
     from ydbctl.commands import logs as cmd_logs
     from ydbctl.commands import ports as cmd_ports
+    from ydbctl.commands import recover as cmd_recover
     from ydbctl.commands import regions as cmd_regions
+    from ydbctl.commands import reorg as cmd_reorg
+    from ydbctl.commands import restore as cmd_restore
+    from ydbctl.commands import rundown as cmd_rundown
     from ydbctl.commands import shell as cmd_shell
     from ydbctl.commands import sql as cmd_sql
     from ydbctl.commands import status as cmd_status
@@ -198,6 +206,93 @@ def _build_parser() -> argparse.ArgumentParser:
     p_export.set_defaults(globals_sub="export")
 
     p_glob.set_defaults(func=lambda a, prof: cmd_globals.dispatch(a, prof))
+
+    # ---- Phase 3: maintenance ----
+    p = _sub("integ", help="mupip integ — integrity check")
+    p.add_argument("--region", default="*",
+                   help="Region (default: * = all regions)")
+    p.add_argument("--full", action="store_true",
+                   help="Run -full integ instead of -fast")
+    p.set_defaults(func=lambda a, prof: cmd_integ.run(
+        prof, region=a.region, full=a.full))
+
+    p = _sub("reorg", help="mupip reorg — defrag/coalesce blocks")
+    p.add_argument("--region", default="*",
+                   help="Region (default: * = all regions)")
+    p.add_argument("--truncate", action="store_true",
+                   help="Truncate to free unused blocks")
+    p.set_defaults(func=lambda a, prof: cmd_reorg.run(
+        prof, region=a.region, truncate=a.truncate))
+
+    p = _sub("freeze", help="mupip freeze — suspend/resume DB updates")
+    p.add_argument("--region", default="*",
+                   help="Region (default: * = all regions)")
+    grp = p.add_mutually_exclusive_group(required=False)
+    grp.add_argument("--on", action="store_true", help="Freeze the region")
+    grp.add_argument("--off", action="store_true", help="Unfreeze the region")
+    p.set_defaults(func=lambda a, prof: cmd_freeze.run(
+        prof, on=a.on, off=a.off, region=a.region))
+
+    p = _sub("rundown", help="mupip rundown — release orphan IPC")
+    p.add_argument("--region", default="*",
+                   help="Region (default: * = all regions)")
+    p.set_defaults(func=lambda a, prof: cmd_rundown.run(prof, region=a.region))
+
+    p = _sub("recover", help="mupip journal -recover — replay journal records")
+    p.add_argument("--region", default="*",
+                   help="Region (default: * = all regions)")
+    p.add_argument("--journal-file", default=None,
+                   help="Specific journal file to recover (overrides --region)")
+    p.add_argument("--forward", action="store_true",
+                   help="Forward recovery (default: backward)")
+    p.set_defaults(func=lambda a, prof: cmd_recover.run(
+        prof, region=a.region, journal_file=a.journal_file,
+        backward=not a.forward))
+
+    p = _sub("backup", help="mupip backup -bytestream — write backup tarball")
+    p.add_argument("region", nargs="?", default="DEFAULT",
+                   help="Region to back up (default: DEFAULT)")
+    p.add_argument("--to", type=Path, default=None,
+                   help="Host output dir (default: ~/data/backups/ydb-test-<UTC>)")
+    p.add_argument("--offline", action="store_true",
+                   help="Take an offline (frozen) backup (slower, more consistent)")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=lambda a, prof: cmd_backup.run(
+        prof, region=a.region, to=a.to, online=not a.offline,
+        dry_run=a.dry_run))
+
+    p = _sub("restore",
+             help="mupip restore — overwrite DAT from backup (destructive)")
+    p.add_argument("--from", dest="source", type=Path, required=True,
+                   help="Backup bytestream file to restore from")
+    p.add_argument("--target", required=True,
+                   help="In-container target DAT path")
+    p.add_argument("--yes", action="store_true",
+                   help="Confirm; required to actually overwrite")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=lambda a, prof: cmd_restore.run(
+        prof, source=a.source, target_dat=a.target,
+        yes=a.yes, dry_run=a.dry_run))
+
+    p_locks = _sub("locks", help="lke show / clear active M LOCKs")
+    locks_sub = p_locks.add_subparsers(dest="locks_sub", required=False,
+                                        metavar="ACTION")
+
+    p_lshow = locks_sub.add_parser("show", parents=[globals_parent],
+                                    help="Show active locks (lke show -all)")
+    p_lshow.add_argument("--region", default="*")
+    p_lshow.set_defaults(locks_sub="show")
+
+    p_lclr = locks_sub.add_parser(
+        "clear", parents=[globals_parent],
+        help="Clear locks (mutating; --yes to confirm)",
+    )
+    p_lclr.add_argument("--region", default="*")
+    p_lclr.add_argument("--yes", action="store_true")
+    p_lclr.add_argument("--dry-run", action="store_true")
+    p_lclr.set_defaults(locks_sub="clear")
+
+    p_locks.set_defaults(func=lambda a, prof: cmd_locks.dispatch(a, prof))
 
     p = _sub("which", help="Explain the underlying mechanism for an op")
     p.add_argument("op", nargs="?", default=None,

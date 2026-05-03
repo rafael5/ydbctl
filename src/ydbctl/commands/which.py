@@ -83,6 +83,56 @@ OPERATIONS: dict[str, dict[str, Any]] = {
                       "export: mupip extract -format=ZWR -select=^X + docker cp",
         "underlying": "(see exec for show; mupip + docker cp for export)",
     },
+    # ---- Phase 3 ----
+    "integ": {
+        "mechanism": "mupip integ -fast (default) or -full",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; "
+                      "mupip integ -fast -region <r> 2>&1'",
+    },
+    "reorg": {
+        "mechanism": "mupip reorg [-truncate]",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; mupip reorg -region <r> 2>&1'",
+    },
+    "freeze": {
+        "mechanism": "mupip freeze -on/-off <region>",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; mupip freeze -on <r>'",
+    },
+    "locks": {
+        "mechanism": "show: echo 'show -all' | lke  |  "
+                     "clear: echo 'clear -all -nointeractive' | lke",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; "
+                      "echo show -all -region=<r> | lke'",
+    },
+    "rundown": {
+        "mechanism": "mupip rundown -region <region|*>",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; mupip rundown -region <r>'",
+    },
+    "recover": {
+        "mechanism": "mupip journal -recover -backward [<jnl-file>]",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; "
+                      "mupip journal -recover -backward -region <r>'",
+    },
+    "backup": {
+        "mechanism": "mupip backup -bytestream <region> /tmp/<r>.bk + docker cp",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; rm -f /tmp/.bk; "
+                      "mupip backup -bytestream <r> /tmp/<r>.bk' "
+                      "&& docker cp {container}:/tmp/<r>.bk <host>",
+    },
+    "restore": {
+        "mechanism": "docker cp + mupip restore <dat> <bytestream> "
+                     "(--yes-gated; destructive)",
+        "underlying": "docker cp <src> {container}:/tmp/restore.bk && "
+                      "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; "
+                      "mupip restore <target.dat> /tmp/restore.bk'",
+    },
 }
 
 

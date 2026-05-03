@@ -126,14 +126,18 @@ def gde_show(profile: Profile, *, timeout: float = 30.0) -> str:
 
 
 def mupip(profile: Profile, args: list[str], *, timeout: float = 60.0) -> str:
-    """Run `mupip <args...>`; return stdout."""
+    """Run `mupip <args...>`; return combined stdout+stderr.
+
+    mupip writes most informational messages (FILERENAME, BACKUPDBFILE,
+    BACKUPSUCCESS, MUFILRNDWNSUC, etc.) to stderr — callers want to see
+    those, so the wrapper merges 2>&1 inside the container shell.
+    """
     quoted = " ".join(_shell_quote(a) for a in args)
-    res = ydb_run(profile, f"mupip {quoted}", timeout=timeout)
+    res = ydb_run(profile, f"mupip {quoted} 2>&1", timeout=timeout)
     if res["returncode"] != 0:
-        # mupip prints errors to stderr; surface both
         raise YdbError(
             f"mupip {quoted}: exit {res['returncode']}: "
-            f"{(res['stderr'] or res['stdout'])[:400]}"
+            f"{(res['stdout'] or res['stderr'])[:400]}"
         )
     return res["stdout"]
 
