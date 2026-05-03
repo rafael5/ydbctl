@@ -194,3 +194,6 @@ class TestUsage:
         for known in ("integ", "reorg", "freeze", "locks",
                       "rundown", "recover", "backup", "restore"):
             assert known in proc.stdout
+        # Phase 4 + 5
+        for known in ("vista", "repl", "rpc"):
+            assert known in proc.stdout

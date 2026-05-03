@@ -294,12 +294,113 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_locks.set_defaults(func=lambda a, prof: cmd_locks.dispatch(a, prof))
 
+    # ---- Phase 4: VistA layer (gated by profile.vista=True) ----
+    from ydbctl.commands import vista as cmd_vista
+
+    p_vista = _sub("vista", help="VistA-on-YottaDB helpers "
+                                  "(profile.vista=True required)")
+    vista_sub = p_vista.add_subparsers(dest="vista_sub", required=False,
+                                        metavar="SERVICE")
+
+    for svc in ("rpcbroker", "vistalink", "hl7"):
+        p_svc = vista_sub.add_parser(
+            svc, parents=[globals_parent],
+            help=f"{svc} listener: start | stop | status",
+        )
+        p_svc.add_argument("action", nargs="?", default="status",
+                            choices=["start", "stop", "status"])
+        p_svc.set_defaults(vista_sub=svc)
+
+    p_jnl = vista_sub.add_parser("journal", parents=[globals_parent],
+                                  help="Journal: enable | disable | rotate")
+    p_jnl.add_argument("action", choices=["enable", "disable", "rotate"])
+    p_jnl.set_defaults(vista_sub="journal")
+
+    p_vp = vista_sub.add_parser("ports", parents=[globals_parent],
+                                 help="VistA-listener reachability table")
+    p_vp.set_defaults(vista_sub="ports")
+
+    p_vista.set_defaults(func=lambda a, prof: cmd_vista.dispatch(a, prof))
+
+    # ---- Phase 5: replication + JSON-RPC ----
+    from ydbctl.commands import repl as cmd_repl
+
+    p_repl = _sub("repl", help="Replication via mupip replicate (Phase 5)")
+    repl_sub = p_repl.add_subparsers(dest="repl_sub", required=False,
+                                      metavar="ROLE")
+
+    p_src = repl_sub.add_parser("source", parents=[globals_parent],
+                                 help="Source server: checkhealth | "
+                                      "showbacklog | start | stop")
+    p_src.add_argument("repl_action",
+                        choices=["checkhealth", "showbacklog",
+                                 "start", "stop", "shutdown"])
+    p_src.add_argument("--port", type=int, default=4000,
+                        help="Listener port (for start)")
+    p_src.add_argument("--secondary", default=None,
+                        help="Secondary host:port (for start)")
+    p_src.add_argument("--log", default=None,
+                        help="Log file path (for start)")
+    p_src.add_argument("--timeout-secs", type=int, default=30,
+                        help="Shutdown timeout in seconds (for stop)")
+    p_src.set_defaults(repl_sub="source")
+
+    p_rcv = repl_sub.add_parser("receiver", parents=[globals_parent],
+                                 help="Receiver server: checkhealth | "
+                                      "start | stop")
+    p_rcv.add_argument("repl_action",
+                        choices=["checkhealth", "start",
+                                 "stop", "shutdown"])
+    p_rcv.add_argument("--listenport", type=int, default=4001,
+                        help="Listen port (for start)")
+    p_rcv.add_argument("--log", default=None,
+                        help="Log file path (for start)")
+    p_rcv.add_argument("--timeout-secs", type=int, default=30,
+                        help="Shutdown timeout in seconds (for stop)")
+    p_rcv.set_defaults(repl_sub="receiver")
+
+    p_inst = repl_sub.add_parser("instance", parents=[globals_parent],
+                                  help="Instance: create")
+    p_inst.add_argument("repl_action", choices=["create"])
+    p_inst.add_argument("--name", required=True, help="Instance name")
+    grp = p_inst.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--root-primary", action="store_true")
+    grp.add_argument("--propagate-primary", action="store_true")
+    p_inst.set_defaults(repl_sub="instance")
+
+    p_rb = repl_sub.add_parser("rollback", parents=[globals_parent],
+                                help="Rollback to a known sync point (--yes)")
+    p_rb.add_argument("--fetchresync", type=int, default=None,
+                       help="Fetchresync source port")
+    p_rb.add_argument("--yes", action="store_true",
+                       help="Confirm — required to actually run")
+    p_rb.set_defaults(repl_sub="rollback")
+
+    p_repl.set_defaults(func=lambda a, prof: cmd_repl.dispatch(a, prof))
+
+    # rpc — JSON-RPC 2.0 single-process mode for AI agents
+    p = _sub("rpc", help="JSON-RPC 2.0 server on stdin/stdout (one process, "
+                          "many methods — for AI agents)")
+    p.set_defaults(func=lambda a, prof: _rpc_dispatch(prof))
+
     p = _sub("which", help="Explain the underlying mechanism for an op")
     p.add_argument("op", nargs="?", default=None,
                    help="Operation name (omit to list all)")
     p.set_defaults(func=lambda a, prof: cmd_which.run(prof, op=a.op))
 
     return parser
+
+
+def _rpc_dispatch(profile):
+    """Run the JSON-RPC server loop and return a sentinel envelope.
+
+    The serve loop writes responses directly to stdout; main() must
+    skip its own _emit() rendering when this returns.
+    """
+    from ydbctl.rpc import serve
+    serve(profile)
+    return {"v": 1, "ok": True, "command": "rpc",
+            "data": None, "warnings": [], "_skip_emit": True}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -326,6 +427,8 @@ def main(argv: list[str] | None = None) -> int:
             code=ErrorCode.INTERNAL,
             message=f"{type(e).__name__}: {e}",
         )
+    if envelope.get("_skip_emit"):
+        return exit_code_for(ErrorCode.OK)
     return _emit(envelope, args=args)
 
 

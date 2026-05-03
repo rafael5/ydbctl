@@ -5,9 +5,14 @@ Hides the patchwork of `docker exec`, `mupip` / `lke` / `gde` invocations,
 IPC bookkeeping, and direct-mode heredocs behind a deterministic,
 JSON-first surface.
 
-This repo implements **Phases 1, 2, and 3** of the design — read-only
-floor + M execution / SQL / shell / globals + maintenance ops
-(integ / reorg / freeze / locks / rundown / recover / backup / restore).
+This repo implements **Phases 1–5** of the design:
+
+1. read-only floor (status/version/ports/env/regions/files/dbinfo/ipc/logs/health/which)
+2. M execution + SQL/Octo + shell + globals
+3. maintenance (integ/reorg/freeze/locks/rundown/recover/backup/restore)
+4. VistA-on-YottaDB layer (rpcbroker/vistalink/hl7/journal/ports)
+5. replication (mupip replicate) + JSON-RPC 2.0 single-process mode
+
 Every command is tested against a live `ydb-test` container.
 
 Sibling project: [`irisctl`](https://github.com/rafael5/irisctl) for
@@ -288,15 +293,76 @@ make check        # lint + mypy + cov (full gate)
 The `live_ydb` pytest fixture is the readiness probe — tests marked
 `@pytest.mark.integration` skip cleanly if the container isn't up.
 
+### Phase 4 — VistA layer
+
+The VistA-on-YottaDB layer is gated by `profile.vista=True`. Without
+it, every `vista *` subcommand returns a `usage` error so it never
+runs against a non-VistA YottaDB image. Helper-script paths default
+to `/home/<vista_instance>/bin/<script>.sh` (matching docker-vista-fork's
+`autoInstaller.sh -y` install layout).
+
+| Command | Purpose |
+|---|---|
+| `ydbctl vista rpcbroker [start\|stop\|status]` | Start/stop/check the RPC Broker listener (default port 9430) |
+| `ydbctl vista vistalink [start\|stop\|status]` | VistALink (default port 8001) |
+| `ydbctl vista hl7 [start\|stop\|status]` | VistA HL7 v2.x (default port 5001) |
+| `ydbctl vista journal {enable\|disable\|rotate}` | Journal management — sources `/home/<inst>/etc/env` then runs the matching helper |
+| `ydbctl vista ports` | Reachability table for the three VistA listeners |
+
+`start` is `nohup bash <script>.sh & echo PID=$!` (foreground listener
+backgrounded). `stop` is `pkill -f <script>.sh`. `status` combines
+TCP-port reachability with an in-container `pgrep -f` check.
+
+### Phase 5 — replication + JSON-RPC
+
+Replication subcommands wrap `mupip replicate`:
+
+| Command | Purpose |
+|---|---|
+| `ydbctl repl source {checkhealth\|showbacklog\|start --port N\|stop}` | Source server lifecycle |
+| `ydbctl repl receiver {checkhealth\|start --listenport N\|stop}` | Receiver server lifecycle |
+| `ydbctl repl instance create --name X --root-primary` | Initialize the `.repl` instance file |
+| `ydbctl repl rollback --fetchresync N --yes` | Roll back to a known sync point |
+
+Status subcommands (`source checkhealth`, `source showbacklog`,
+`receiver checkhealth`) detect the unconfigured state cleanly — the
+raw `%YDB-E-REPLINSTACC` mupip error gets translated to a `not_found`
+envelope with a helpful hint.
+
+#### `ydbctl rpc` — JSON-RPC 2.0 single-process mode
+
+The Phase 5 marquee feature for AI use. `ydbctl rpc` reads
+newline-delimited JSON-RPC 2.0 requests on stdin and writes responses
+on stdout — one persistent process drives ~35 registered methods
+without paying argparse + config-load startup per call:
+
+```bash
+$ printf '%s\n%s\n' \
+    '{"jsonrpc":"2.0","method":"version","id":1}' \
+    '{"jsonrpc":"2.0","method":"regions","id":2}' \
+  | ydbctl rpc
+{"jsonrpc":"2.0","id":1,"result":{"v":1,"ok":true,"command":"version",
+ "data":{"ydb_release":"r2.07","upstream":"GT.M V7.1-002",...}}}
+{"jsonrpc":"2.0","id":2,"result":{"v":1,"ok":true,"command":"regions",
+ "data":{"regions":["DEFAULT","YDBAIM","YDBJNLF","YDBOCTO"],...}}}
+```
+
+Method names use underscores in place of subcommand spaces
+(`globals_show`, `locks_show`, `vista_rpcbroker`, `repl_source_checkhealth`).
+Standard JSON-RPC 2.0 error codes apply: `-32700` parse error,
+`-32600` invalid request, `-32601` method not found, `-32602` invalid
+params, `-32603` internal error. Notifications (no `id`) get no
+response.
+
 ### Test totals
 
-After Phase 3: **107 passed + 1 deselected** (~9.3s).
+After Phase 5: **135 passed + 1 deselected** (~9.5s).
 
-- 21 unit tests on parsers + output + config envelope
-- 86 integration tests against the live container
-- 1 `@slow` test (real backup → restore round-trip) opt-in via
-  `make test-slow`
-- Default coverage: ~44% (gate at 25%).
+- ~30 unit tests (parsers, output, config, ydb_exec helpers, RPC
+  registry, vista gating)
+- ~105 integration tests against the live container
+- 1 `@slow` (backup → restore round-trip) opt-in via `make test-slow`
+- Default coverage: **~57%** (gate at 25%).
 
 ## Roadmap
 

@@ -28,6 +28,14 @@ class Profile:
     gtcm_port: int = 6789
     # VistA layer (docker-vista-fork's YottaDB build)
     vista: bool = False
+    vista_instance: str = "foia"
+    vista_bin_dir: str = ""  # defaults to /home/<vista_instance>/bin
+    vista_rpc_port: int = 9430
+    vista_vistalink_port: int = 8001
+    vista_hl7_port: int = 5001
+
+    def vista_bin(self) -> str:
+        return self.vista_bin_dir or f"/home/{self.vista_instance}/bin"
 
 
 _DEFAULTS: dict[str, object] = {
@@ -40,6 +48,11 @@ _DEFAULTS: dict[str, object] = {
     "rocto_port": 1337,
     "gtcm_port": 6789,
     "vista": False,
+    "vista_instance": "foia",
+    "vista_bin_dir": "",
+    "vista_rpc_port": 9430,
+    "vista_vistalink_port": 8001,
+    "vista_hl7_port": 5001,
 }
 
 
@@ -84,6 +97,11 @@ def load_profile(
         rocto_port=int(merged.get("rocto_port", 1337)),
         gtcm_port=int(merged.get("gtcm_port", 6789)),
         vista=bool(merged.get("vista", False)),
+        vista_instance=str(merged.get("vista_instance", "foia")),
+        vista_bin_dir=str(merged.get("vista_bin_dir", "")),
+        vista_rpc_port=int(merged.get("vista_rpc_port", 9430)),
+        vista_vistalink_port=int(merged.get("vista_vistalink_port", 8001)),
+        vista_hl7_port=int(merged.get("vista_hl7_port", 5001)),
     )
 
 

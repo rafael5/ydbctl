@@ -133,6 +133,29 @@ OPERATIONS: dict[str, dict[str, Any]] = {
                       "'. {ydb_dist}/ydb_env_set; "
                       "mupip restore <target.dat> /tmp/restore.bk'",
     },
+    # ---- Phase 4: VistA layer ----
+    "vista": {
+        "mechanism": "VistA-on-YottaDB helpers from docker-vista-fork — "
+                     "rpcbroker/vistalink/hl7 listeners + journal scripts",
+        "underlying": "docker exec {container} bash -c "
+                      "'nohup bash /home/<inst>/bin/<svc>.sh & echo PID=$!' "
+                      "(start) | pkill -f <svc>.sh (stop) | "
+                      "tcp_open + pgrep (status)",
+    },
+    # ---- Phase 5: replication + JSON-RPC ----
+    "repl": {
+        "mechanism": "mupip replicate -source/-receiver/-instance/-rollback. "
+                     "Status calls translate REPLINSTACC into a clean "
+                     "not_found envelope when no replication is configured.",
+        "underlying": "docker exec {container} bash -c "
+                      "'. {ydb_dist}/ydb_env_set; "
+                      "mupip replicate -source -checkhealth'",
+    },
+    "rpc": {
+        "mechanism": "JSON-RPC 2.0 server on stdin/stdout — drives ~35 "
+                     "registered methods through one persistent process",
+        "underlying": "internal: ydbctl.rpc.serve()",
+    },
 }
 
 
