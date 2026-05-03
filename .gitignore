@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+!.env.example
+*.log
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.DS_Store
+*.db
+*.sqlite
+.coverage
+htmlcov/

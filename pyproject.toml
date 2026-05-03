@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ydbctl"
+version = "0.1.0"
+description = "Programmer/AI-friendly CLI for YottaDB Docker containers"
+requires-python = ">=3.12"
+dependencies = [
+    "argcomplete>=3.5",
+]
+
+[project.scripts]
+ydbctl = "ydbctl.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "pytest-watch",
+    "pytest-randomly",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "integration: requires the live ydb-test YottaDB container",
+    "slow: full container stop/start cycle — opt in with -m slow",
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+# Phase 1 commands run subprocesses (docker exec) and e2e tests drive
+# the CLI via subprocess too, so pytest-cov can't trace into either.
+# Achievable floor without direct-import unit tests is ~25%.
+fail_under = 25
+show_missing = true
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true

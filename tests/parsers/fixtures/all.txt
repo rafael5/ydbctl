@@ -1,0 +1,60 @@
+=== mupip integ -fast ===
+
+
+Integ of region DEFAULT
+
+No errors detected by fast integ.
+
+Type           Blocks         Records          % Used      Adjacent
+
+Directory           2               1           0.537            NA
+Index               0               0           0.000             0
+Data                0              NA              NA             0
+Free             9998              NA              NA            NA
+Total           10000              NA              NA             0
+
+
+Integ of region YDBAIM
+
+No errors detected by fast integ.
+
+Type           Blocks         Records          % Used      Adjacent
+
+Directory           2               1           1.074            NA
+Index               0               0           0.000             0
+Data                0              NA              NA             0
+Free             9998              NA              NA            NA
+Total           10000              NA              NA             0
+
+
+Integ of region YDBOCTO
+
+
+=== mupip journal -show ===
+%YDB-E-CLIERR, Missing or illegal combination of command elements - check documentation: FORWARD BACKWARD
+
+=== ipcs ===
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status      
+
+
+=== mupip dumpfhead head ===
+record("sgmnt_data.abandoned_kills")=0
+record("sgmnt_data.acc_meth")=1
+record("sgmnt_data.active_lvl_trigger_cntr")=0
+record("sgmnt_data.active_lvl_trigger_tn")="0x0000000000000000"
+record("sgmnt_data.after_trunc_total_blks")=0
+record("sgmnt_data.alignsize")=2097152
+record("sgmnt_data.async_restart_eagain_cntr")=0
+record("sgmnt_data.async_restart_eagain_tn")="0x0000000000000000"
+
+=== yottadb -version ===
+YottaDB release:         r2.07
+Upstream base version:   GT.M V7.1-002
+Platform:                Linux x86_64
+Build date/time:         2026-04-30 21:21
+Build commit SHA:        de1fee28a21ca2af3526dce980e8c77ae4f2090c (dirty)
+Compiler:                GCC
+Compiler Version:        13.3.0
+Build Type:              Production
